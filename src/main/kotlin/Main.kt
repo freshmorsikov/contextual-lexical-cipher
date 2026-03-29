@@ -1,5 +1,23 @@
 package com.github.freshmorsikov
 
+import kotlin.random.Random
+
+private val ALPHABET: List<Char> = buildList {
+    addAll('a'..'z')
+    addAll('A'..'Z')
+    addAll('0'..'9')
+    add(' ')
+    addAll(
+        listOf(
+            '!', '"', '#', '$', '%', '&', '\'',
+            '(', ')', '*', '+', ',', '-', '.',
+            '/', ':', ';', '<', '=', '>', '?',
+            '@', '[', '\\', ']', '^', '_', '`',
+            '{', '|', '}', '~'
+        )
+    )
+}
+
 fun main() {
     print("key=")
     val key = readln()
@@ -7,7 +25,6 @@ fun main() {
     val text = readln()
 
     val words = loadWords()
-    println(words.joinToString())
 
     val mapping = words
         .shuffle(key = key)
