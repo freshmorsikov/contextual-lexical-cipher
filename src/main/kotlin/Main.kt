@@ -1,5 +1,6 @@
 package com.github.freshmorsikov
 
+import java.security.MessageDigest
 import kotlin.random.Random
 
 private val ALPHABET: List<Char> = buildList {
@@ -44,12 +45,19 @@ private fun loadWords(): List<String> {
         }
 }
 
-private fun getSeed(key: String): Int {
-    return 0 // TODO implement
+internal fun List<String>.shuffle(key: String): List<String> {
+    return shuffled(Random(getSeed(key)))
 }
 
-private fun List<String>.shuffle(key: String): List<String> {
-    return this // TODO implement
+internal fun getSeed(key: String): Int {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest(key.toByteArray())
+
+    return digest
+        .take(Int.SIZE_BYTES)
+        .fold(0) { acc, byte ->
+            (acc shl 8) or (byte.toInt() and 0xff)
+        }
 }
 
 private fun List<String>.toMap(): Map<Char, List<String>> {
