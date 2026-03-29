@@ -26,5 +26,4 @@ class ShuffleTest {
         assertNotEquals(first, second)
     }
 
-
 }

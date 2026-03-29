@@ -3,7 +3,7 @@ package com.github.freshmorsikov
 import java.security.MessageDigest
 import kotlin.random.Random
 
-private val ALPHABET: List<Char> = buildList {
+internal val ALPHABET: List<Char> = buildList {
     addAll('a'..'z')
     addAll('A'..'Z')
     addAll('0'..'9')
@@ -29,7 +29,7 @@ fun main() {
 
     val mapping = words
         .shuffle(key = key)
-        .toMap()
+        .toMap(alphabet = ALPHABET)
 
     val encodedText = text.encode(mapping = mapping)
     println(encodedText)
@@ -60,8 +60,24 @@ internal fun getSeed(key: String): Int {
         }
 }
 
-private fun List<String>.toMap(): Map<Char, List<String>> {
-    return emptyMap() // TODO implement
+internal fun List<String>.toMap(alphabet: List<Char>): Map<Char, List<String>> {
+    val wordCount = size
+    val bucketSize = wordCount / alphabet.size
+
+    return buildMap(alphabet.size) {
+        var startIndex = 0
+
+        alphabet.forEachIndexed { index, char ->
+            val endIndex = if (index == alphabet.lastIndex) {
+                wordCount
+            } else {
+                startIndex + bucketSize
+            }
+
+            put(char, subList(startIndex, endIndex))
+            startIndex = endIndex
+        }
+    }
 }
 
 private fun String.encode(mapping: Map<Char, List<String>>): String {
