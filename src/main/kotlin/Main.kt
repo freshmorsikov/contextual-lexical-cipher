@@ -80,6 +80,8 @@ internal fun List<String>.toMap(alphabet: List<Char>): Map<Char, List<String>> {
     }
 }
 
-private fun String.encode(mapping: Map<Char, List<String>>): String {
-    return "" // TODO implement
+internal fun String.encode(mapping: Map<Char, List<String>>): String {
+    return map { char ->
+        mapping.getValue(char).first()
+    }.joinToString(separator = " ")
 }
