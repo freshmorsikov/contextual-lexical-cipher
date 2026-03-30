@@ -5,17 +5,29 @@ import kotlin.test.assertEquals
 
 class EncodeTest {
 
+    private val fakeSelector = object : WordSelector {
+        override fun select(
+            words: List<String>,
+            encodedWords: List<String>
+        ): String {
+            return words.first()
+        }
+    }
+
     @Test
-    fun `WHEN encoding text THEN uses first word from each character bucket and joins with spaces`() {
+    fun `WHEN encode THEN return selected words joined by spaces`() {
         val mapping = mapOf(
-            'a' to listOf("alpha", "able"),
-            'b' to listOf("bravo", "baker"),
-            ' ' to listOf("space", "blank"),
+            'a' to listOf("I", "alpha"),
+            'b' to listOf("love", "bravo"),
+            'c' to listOf("you", "charlie"),
         )
 
-        val encoded = "ab a".encode(mapping = mapping)
+        val encoded = "abc".encode(
+            mapping = mapping,
+            wordSelector = fakeSelector
+        )
 
-        assertEquals("alpha bravo space alpha", encoded)
+        assertEquals("I love you", encoded)
     }
 
 }

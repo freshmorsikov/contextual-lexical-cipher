@@ -31,7 +31,10 @@ fun main() {
         .shuffle(key = key)
         .toMap(alphabet = ALPHABET)
 
-    val encodedText = text.encode(mapping = mapping)
+    val encodedText = text.encode(
+        mapping = mapping,
+        wordSelector = LlmWordSelector(),
+    )
     println(encodedText)
 }
 
@@ -80,8 +83,20 @@ internal fun List<String>.toMap(alphabet: List<Char>): Map<Char, List<String>> {
     }
 }
 
-internal fun String.encode(mapping: Map<Char, List<String>>): String {
-    return map { char ->
-        mapping.getValue(char).first()
-    }.joinToString(separator = " ")
+internal fun String.encode(
+    mapping: Map<Char, List<String>>,
+    wordSelector: WordSelector,
+): String {
+    val encodedWords = mutableListOf<String>()
+
+    for (char in this) {
+        val words = mapping.getValue(char)
+        val selectedWord = wordSelector.select(
+            words = words,
+            encodedWords = encodedWords.toList()
+        )
+        encodedWords += selectedWord
+    }
+
+    return encodedWords.joinToString(separator = " ")
 }
