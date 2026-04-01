@@ -25,27 +25,19 @@ fun main() {
     print("text=")
     val text = readln()
 
-    val words = loadWords()
+    val words = loadWordResource("words.txt")
 
     val mapping = words
         .shuffle(key = key)
         .toMap(alphabet = ALPHABET)
 
-    val encodedText = text.encode(
-        mapping = mapping,
-        wordSelector = LlmWordSelector(),
-    )
-    println(encodedText)
-}
-
-private fun loadWords(): List<String> {
-    return "words.txt".getResourceAsStream()
-        .bufferedReader()
-        .useLines { lines ->
-            lines
-                .map(String::trim)
-                .toList()
-        }
+    LlmWordSelector().use { wordSelector ->
+        val encodedText = text.encode(
+            mapping = mapping,
+            wordSelector = wordSelector,
+        )
+        println(encodedText)
+    }
 }
 
 internal fun List<String>.shuffle(key: String): List<String> {

@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.1.21"
+    kotlin("jvm") version "2.3.0"
 }
 
 group = "com.github.freshmorsikov"
@@ -10,6 +10,10 @@ repositories {
 }
 
 dependencies {
+    implementation("ai.koog:prompt-executor-openai-client-jvm:0.6.4")
+    implementation("io.ktor:ktor-client-cio-jvm:3.2.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+
     testImplementation(kotlin("test"))
 }
 
