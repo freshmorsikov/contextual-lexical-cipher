@@ -52,10 +52,11 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
             is Result.Success -> {
                 val word = getWord(
                     words = words,
-                    sentence = sentence,
+                    sentence = "$sentence ${linkingResult.word}",
                 ).wordOrNone()
                 "${linkingResult.word} $word"
             }
+
             is Result.Error -> {
                 "-"
             }
@@ -92,26 +93,30 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
                     model = OpenAIModels.Chat.GPT5Nano,
                 )
 
-                val responseContents = response.map { it.content.trim() }
                 val selectedWord = response
                     .firstOrNull()
                     ?.content
                     ?.trim()
-
-                logDebug(
-                    type = "response",
-                    message = """
-                        messages=${responseContents.joinToString(separator = " | ").ifBlank { "<empty>" }}
-                        selected=${selectedWord ?: "<null>"}
-                    """.trimIndent()
-                )
-
                 if (selectedWord == null) {
+                    logDebug(
+                        type = "error",
+                        message = "selectedWord = null",
+                    )
                     Result.Error
                 } else {
-                    words.firstOrNull { word ->
-                        word == selectedWord.lowercase()
-                    }.toResult()
+                    val word = words.indexOfFirst { word ->
+                        word.lowercase() == selectedWord.lowercase()
+                    }.takeIf { index ->
+                        index != -1
+                    }?.let { index ->
+                        words[index]
+                    }
+                    logDebug(
+                        type = "result",
+                        message = "selectedWord = $word",
+                    )
+
+                    word.toResult()
                 }
             }
         }.getOrElse {
