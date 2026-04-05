@@ -1,8 +1,8 @@
 package com.github.freshmorsikov
 
 import ai.koog.prompt.dsl.prompt
-import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
-import ai.koog.prompt.executor.clients.openai.OpenAIModels
+import ai.koog.prompt.executor.ollama.client.OllamaClient
+import ai.koog.prompt.executor.ollama.client.OllamaModels
 import kotlinx.coroutines.runBlocking
 
 internal class LlmWordSelector : WordSelector, AutoCloseable {
@@ -17,8 +17,9 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         private const val MAX_ATTEMPTS = 3
     }
 
-    private val apiKey: String = System.getenv("OPENAI_API_KEY") ?: error("OPENAI_API_KEY is not set")
-    private val llmClient: OpenAILLMClient = OpenAILLMClient(apiKey)
+    // private val apiKey: String = System.getenv("OPENAI_API_KEY") ?: error("OPENAI_API_KEY is not set")
+    // private val llmClient: OpenAILLMClient = OpenAILLMClient(apiKey)
+    private val llmClient = OllamaClient()
 
     private fun List<String>.toSentence(): String {
         return joinToString(separator = " ").ifBlank { "<empty>" }
@@ -84,7 +85,7 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
                             """.trimIndent()
                         )
                     },
-                    model = OpenAIModels.Chat.GPT5Nano,
+                    model = OllamaModels.Meta.LLAMA_3_2,
                 )
 
                 val selectedWord = response
