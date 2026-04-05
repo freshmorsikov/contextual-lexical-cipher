@@ -31,13 +31,16 @@ fun main() {
         .shuffle(key = key)
         .toMap(alphabet = ALPHABET)
 
+    val start = System.currentTimeMillis()
     LlmWordSelector().use { wordSelector ->
         val encodedText = text.encode(
             mapping = mapping,
             wordSelector = wordSelector,
         )
-        println(encodedText)
+        println("\n\nFinal result:\n${encodedText}")
     }
+    val finish = System.currentTimeMillis()
+    println("Execution took ${finish - start} ms")
 }
 
 internal fun List<String>.shuffle(key: String): List<String> {
