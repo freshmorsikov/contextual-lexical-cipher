@@ -17,8 +17,6 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         private const val MAX_ATTEMPTS = 3
     }
 
-    // private val apiKey: String = System.getenv("OPENAI_API_KEY") ?: error("OPENAI_API_KEY is not set")
-    // private val llmClient: OpenAILLMClient = OpenAILLMClient(apiKey)
     private val llmClient = OllamaClient()
 
     private fun List<String>.toSentence(): String {
