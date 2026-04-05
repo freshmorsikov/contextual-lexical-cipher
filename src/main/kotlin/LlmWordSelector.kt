@@ -13,54 +13,48 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
     }
 
     companion object {
-        val LINKING_WORDS = loadWordResource("linking_words.txt")
+        private val LINKING_WORDS = loadWordResource("linking_words.txt")
+        private const val MAX_ATTEMPTS = 3
     }
 
     private val apiKey: String = System.getenv("OPENAI_API_KEY") ?: error("OPENAI_API_KEY is not set")
     private val llmClient: OpenAILLMClient = OpenAILLMClient(apiKey)
 
+    private fun List<String>.toSentence(): String {
+        return joinToString(separator = " ").ifBlank { "<empty>" }
+    }
+
     override fun select(
         words: List<String>,
         encodedWords: List<String>,
     ): String {
-        val sentence = encodedWords.joinToString(separator = " ").ifBlank { "<empty>" }
-        val result = getWord(
-            words = words,
-            sentence = sentence,
-        )
-        return when (result) {
-            is Result.Success -> return result.word
-            is Result.Error -> {
-                tryWithLinkinWord(
-                    words = words,
-                    sentence = sentence,
-                )
+        val mixedWords = LINKING_WORDS + words
+        val newWords = mutableListOf<String>()
+
+        repeat(MAX_ATTEMPTS) { i ->
+            val wordSet = if (i == MAX_ATTEMPTS - 1) {
+                words
+            } else {
+                mixedWords
+            }
+            val result = getWord(
+                words = wordSet,
+                sentence = (encodedWords + newWords).toSentence()
+            )
+            when (result) {
+                is Result.Success -> {
+                    newWords += result.word
+
+                    if (result.word in words) {
+                        return newWords.toSentence()
+                    }
+                }
+
+                is Result.Error -> {}
             }
         }
-    }
 
-    private fun tryWithLinkinWord(
-        words: List<String>,
-        sentence: String,
-    ): String {
-        val linkingResult = getWord(
-            words = LINKING_WORDS,
-            sentence = sentence,
-        )
-
-        return when (linkingResult) {
-            is Result.Success -> {
-                val word = getWord(
-                    words = words,
-                    sentence = "$sentence ${linkingResult.word}",
-                ).wordOrNone()
-                "${linkingResult.word} $word"
-            }
-
-            is Result.Error -> {
-                "-"
-            }
-        }
+        return "-"
     }
 
     private fun getWord(words: List<String>, sentence: String): Result {
@@ -136,13 +130,6 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
     private fun String?.toResult(): Result {
         if (this == null) return Result.Error
         return Result.Success(this)
-    }
-
-    private fun Result.wordOrNone(): String {
-        return when (this) {
-            is Result.Error -> "-"
-            is Result.Success -> word
-        }
     }
 
     private fun logDebug(type: String, message: String) {
