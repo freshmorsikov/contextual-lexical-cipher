@@ -1,8 +1,9 @@
 package com.github.freshmorsikov
 
 import ai.koog.prompt.dsl.prompt
-import ai.koog.prompt.executor.ollama.client.OllamaClient
-import ai.koog.prompt.executor.ollama.client.OllamaModels
+import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
+import ai.koog.prompt.executor.clients.openai.OpenAIModels
+import ai.koog.prompt.params.LLMParams
 import kotlinx.coroutines.runBlocking
 
 internal class LlmWordSelector : WordSelector, AutoCloseable {
@@ -17,7 +18,14 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         private const val MAX_ATTEMPTS = 3
     }
 
-    private val llmClient = OllamaClient()
+    private val llmClientDelegate = lazy {
+        OpenAILLMClient(
+            apiKey = requireNotNull(System.getenv("OPENAI_API_KEY")) {
+                "OPENAI_API_KEY environment variable is required to use GPT-4o mini"
+            }
+        )
+    }
+    private val llmClient by llmClientDelegate
 
     private fun List<String>.toSentence(): String {
         return joinToString(separator = " ").ifBlank { "<empty>" }
@@ -68,33 +76,44 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         return runCatching {
             runBlocking {
                 val response = llmClient.execute(
-                    prompt = prompt("word_selector") {
+                    prompt = prompt(
+                        id = "word_selector",
+                        params = LLMParams(
+                            temperature = 1.0,
+                            maxTokens = 20,
+                        )
+                    ) {
                         system(
                             """
-                                You are choosing the next word in a sentence.
-                                Return exactly one candidate word that best continues the sentence.
-                                Return only the chosen word.
+                                You are scoring one candidate continuation.
+                                Output exactly the candidate word provided by the user.
+                                Do not add punctuation.
+                                Do not add explanation.
+                                Output only the word.
                             """.trimIndent()
                         )
                         user(
                             """
-                                Current sentence: $sentence
-                                Candidate words: ${words.joinToString(separator = ", ")}
+                                Unfinished text:
+                                "$sentence"
+
+                                Candidate words:
+                                ${words.joinToString(separator = ", ")}
                             """.trimIndent()
                         )
                     },
-                    model = OllamaModels.Meta.LLAMA_3_2,
+                    model = OpenAIModels.Chat.GPT4oMini
                 )
 
                 val selectedWord = response
                     .firstOrNull()
                     ?.content
                     ?.trim()
+                logDebug(
+                    type = "response",
+                    message = "content = $selectedWord",
+                )
                 if (selectedWord == null) {
-                    logDebug(
-                        type = "error",
-                        message = "selectedWord = null",
-                    )
                     Result.Error
                 } else {
                     val word = words.indexOfFirst { word ->
@@ -105,7 +124,7 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
                         words[index]
                     }
                     logDebug(
-                        type = "result",
+                        type = "success",
                         message = "selectedWord = $word",
                     )
 
@@ -123,7 +142,9 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
     }
 
     override fun close() {
-        llmClient.close()
+        if (llmClientDelegate.isInitialized()) {
+            llmClient.close()
+        }
     }
 
     private fun String?.toResult(): Result {
