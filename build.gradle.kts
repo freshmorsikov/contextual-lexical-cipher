@@ -1,5 +1,6 @@
 plugins {
     kotlin("jvm") version "2.3.0"
+    kotlin("plugin.serialization") version "2.3.0"
 }
 
 group = "com.github.freshmorsikov"
@@ -14,6 +15,7 @@ dependencies {
     implementation("ai.koog:prompt-executor-openai-client-jvm:0.7.3")
     implementation("io.ktor:ktor-client-cio-jvm:3.2.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
 
     testImplementation(kotlin("test"))
 }
