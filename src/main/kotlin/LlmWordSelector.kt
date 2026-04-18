@@ -12,7 +12,13 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.serializer
+
 internal class LlmWordSelector : WordSelector, AutoCloseable {
+
+    internal data class PromptPayload(
+        val systemPrompt: String,
+        val userPrompt: String,
+    )
 
     @Serializable
     internal data class ScoredWordPayload(
@@ -60,7 +66,39 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
     }
 
     private fun List<String>.toSentence(): String {
-        return joinToString(separator = " ")//.ifBlank { "<empty>" }
+        return joinToString(separator = " ")
+    }
+
+    internal fun buildPromptPayload(
+        words: List<String>,
+        sentence: String,
+    ): PromptPayload {
+        val systemPrompt = """
+            You will receive a numbered list.
+            Each item uses this format:
+            <number>. word = <candidate>; phrase = <full phrase with that candidate>
+
+            Choose the top 5 candidate words that best fit the existing text and make the phrase sound natural in normal English.
+            Return JSON as an object with a single field:
+            words: array of objects with:
+            - word: the exact candidate word from the input
+            - naturalnessScore: a number from 0.0 to 1.0
+
+            Return at most 5 words, ordered from most probable to least probable.
+            Higher score means the phrase sounds more natural.
+            Care about repetition and overusing, do not repeat the same words too often, and try to build natural text.
+            Only use candidate words that appear in the input.
+            The number is only an item label and is not part of the candidate word.
+            Do not add explanation or extra fields.
+        """.trimIndent()
+        val userPrompt = words.mapIndexed { index, word ->
+            "${index + 1}. word = $word; phrase = $sentence $word"
+        }.joinToString(separator = "\n")
+
+        return PromptPayload(
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt,
+        )
     }
 
     private class StructuredPromptExecutor(
@@ -114,7 +152,7 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         words: List<String>,
         encodedWords: List<String>,
     ): String {
-        val mixedWords = LINKING_WORDS + words
+        val mixedWords = words + LINKING_WORDS
         val newWords = mutableListOf<String>()
 
         repeat(MAX_ATTEMPTS) { i ->
@@ -140,6 +178,10 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
     }
 
     private fun getWord(words: List<String>, sentence: String): Result<String> {
+        val promptPayload = buildPromptPayload(
+            words = words,
+            sentence = sentence,
+        )
         logDebug(
             type = "request",
             message = """
@@ -152,27 +194,8 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
             runBlocking {
                 val response: Result<StructuredResponse<ScoredWordsPayload>> = promptExecutor.executeStructured(
                     prompt = prompt("word_selector") {
-                        system(
-                            """
-                                You will receive multiple lines in this format:
-                                word = <candidate>; phrase = <full phrase with that candidate>
-
-                                For each line, judge how natural the phrase sounds in normal English.
-                                Return JSON as an object with a single field:
-                                words: array of objects with:
-                                - word: the exact candidate word from the input
-                                - naturalnessScore: a number from 0.0 to 1.0
-
-                                Higher score means the phrase sounds more natural.
-                                Only use candidate words that appear in the input.
-                                Do not add explanation or extra fields.
-                            """.trimIndent()
-                        )
-                        user(
-                            words.joinToString(separator = "\n") { word ->
-                                "word = $word; phrase = $sentence $word"
-                            }
-                        )
+                        system(promptPayload.systemPrompt)
+                        user(promptPayload.userPrompt)
                     },
                     mainModel = OpenAIModels.Chat.GPT4oMini,
                     structure = scoredWordsStructure
@@ -212,20 +235,16 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         )
     }
 
-    private fun selectBestCandidate(
+    internal fun selectBestCandidate(
         candidateWords: List<String>,
         scoredWords: List<ScoredWordPayload>,
     ): String? {
         val candidateLowercaseWords = candidateWords.map { candidateWord ->
             candidateWord.lowercase()
         }
-        return scoredWords
-            .filter { word ->
-                candidateLowercaseWords.contains(word.word.lowercase())
-            }
-            .maxByOrNull { word ->
-                word.naturalnessScore
-            }?.word
+        return scoredWords.firstOrNull { word ->
+            candidateLowercaseWords.contains(word.word.lowercase())
+        }?.word
     }
 
     override fun close() {
