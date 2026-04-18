@@ -12,14 +12,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.serializer
-import kotlin.text.lowercase
-
 internal class LlmWordSelector : WordSelector, AutoCloseable {
-
-    sealed interface Result {
-        data class Success(val word: String) : Result
-        data object Error : Result
-    }
 
     @Serializable
     internal data class ScoredWordPayload(
@@ -78,7 +71,7 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
             mainModel: ai.koog.prompt.llm.LLModel,
             structure: Structure<T, *>,
             retries: Int = 1,
-        ): kotlin.Result<StructuredResponse<T>> {
+        ): Result<StructuredResponse<T>> {
             val structuredPrompt = prompt(prompt) {
                 user {
                     StructuredOutputPrompts.outputInstructionPrompt(this, structure)
@@ -90,17 +83,17 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
                 val response = llmClient.execute(
                     prompt = structuredPrompt,
                     model = mainModel,
-                ).singleOrNull() ?: return kotlin.Result.failure(
+                ).singleOrNull() ?: return Result.failure(
                     IllegalStateException("Expected exactly one LLM response")
                 )
 
                 val assistantMessage = response as? ai.koog.prompt.message.Message.Assistant
-                    ?: return kotlin.Result.failure(
+                    ?: return Result.failure(
                         IllegalStateException("Expected assistant response, got ${response::class.qualifiedName}")
                     )
 
                 try {
-                    return kotlin.Result.success(
+                    return Result.success(
                         StructuredResponse(
                             data = structure.parse(assistantMessage.content),
                             structure = structure,
@@ -111,7 +104,7 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
                 }
             }
 
-            return kotlin.Result.failure(
+            return Result.failure(
                 IllegalStateException("Unable to parse structured output after <$retries> retries")
             )
         }
@@ -134,23 +127,19 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
                 words = wordSet,
                 sentence = (encodedWords + newWords).toSentence()
             )
-            when (result) {
-                is Result.Success -> {
-                    newWords += result.word
+            result.onSuccess { word ->
+                newWords += word
 
-                    if (result.word in words) {
-                        return newWords.toSentence()
-                    }
+                if (word in words) {
+                    return newWords.toSentence()
                 }
-
-                is Result.Error -> {}
             }
         }
 
         return "-"
     }
 
-    private fun getWord(words: List<String>, sentence: String): Result {
+    private fun getWord(words: List<String>, sentence: String): Result<String> {
         logDebug(
             type = "request",
             message = """
@@ -161,7 +150,7 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
 
         return runCatching {
             runBlocking {
-                val response: kotlin.Result<StructuredResponse<ScoredWordsPayload>> = promptExecutor.executeStructured(
+                val response: Result<StructuredResponse<ScoredWordsPayload>> = promptExecutor.executeStructured(
                     prompt = prompt("word_selector") {
                         system(
                             """
@@ -208,16 +197,19 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
                     message = "selectedWord = $word",
                 )
 
-                word.toResult()
+                word.toWordResult()
             }
-        }.getOrElse {
-            logDebug(
-                type = "error",
-                message = "${it::class.qualifiedName}: ${it.message}"
-            )
+        }.fold(
+            onSuccess = { it },
+            onFailure = {
+                logDebug(
+                    type = "error",
+                    message = "${it::class.qualifiedName}: ${it.message}"
+                )
 
-            Result.Error
-        }
+                Result.failure(it)
+            }
+        )
     }
 
     private fun selectBestCandidate(
@@ -240,11 +232,6 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         if (llmClientDelegate.isInitialized()) {
             llmClient.close()
         }
-    }
-
-    private fun String?.toResult(): Result {
-        if (this == null) return Result.Error
-        return Result.Success(this)
     }
 
     private fun logDebug(type: String, message: String) {
