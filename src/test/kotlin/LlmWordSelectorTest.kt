@@ -77,13 +77,15 @@ class LlmWordSelectorTest {
             sentence = "hello",
         )
 
-        assertTrue(prompt.systemPrompt.contains("You will receive a numbered list"))
-        assertTrue(prompt.systemPrompt.contains("Each item uses this format"))
+        assertTrue(prompt.systemPrompt.contains("You will receive the current phrase followed by a numbered list of candidate words"))
+        assertTrue(prompt.systemPrompt.contains("The prompt starts with the current phrase"))
+        assertTrue(prompt.systemPrompt.contains("Each candidate item uses this format"))
         assertTrue(prompt.systemPrompt.contains("The number is only an item label"))
         assertEquals(
             """
-            1. word = alpha; phrase = hello alpha
-            2. word = beta; phrase = hello beta
+            phrase = hello <new word here>
+            1. word = alpha
+            2. word = beta
             """.trimIndent(),
             prompt.userPrompt,
         )

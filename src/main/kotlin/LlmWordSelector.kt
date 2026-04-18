@@ -74,9 +74,12 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
         sentence: String,
     ): PromptPayload {
         val systemPrompt = """
-            You will receive a numbered list.
-            Each item uses this format:
-            <number>. word = <candidate>; phrase = <full phrase with that candidate>
+            You will receive the current phrase followed by a numbered list of candidate words.
+            The prompt starts with the current phrase in this format:
+            phrase = <current phrase>
+
+            Each candidate item uses this format:
+            <number>. word = <candidate>
 
             Choose the top 5 candidate words that best fit the existing text and make the phrase sound natural in normal English.
             Return JSON as an object with a single field:
@@ -91,9 +94,14 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
             The number is only an item label and is not part of the candidate word.
             Do not add explanation or extra fields.
         """.trimIndent()
-        val userPrompt = words.mapIndexed { index, word ->
-            "${index + 1}. word = $word; phrase = $sentence $word"
-        }.joinToString(separator = "\n")
+        val userPrompt = buildString {
+            appendLine("phrase = $sentence <new word here>")
+            append(
+                words.mapIndexed { index, word ->
+                    "${index + 1}. word = $word"
+                }.joinToString(separator = "\n")
+            )
+        }
 
         return PromptPayload(
             systemPrompt = systemPrompt,
@@ -181,7 +189,7 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
         words: List<String>,
         encodedWords: List<String>,
     ): String {
-        val mixedWords = words + LINKING_WORDS
+        val mixedWords = LINKING_WORDS + words
         val newWords = mutableListOf<String>()
 
         logDebug(
@@ -237,7 +245,7 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
                         system(promptPayload.systemPrompt)
                         user(promptPayload.userPrompt)
                     },
-                    mainModel = OpenAIModels.Chat.GPT4oMini,
+                    mainModel = OpenAIModels.Chat.GPT5Mini,
                     structure = scoredWordsStructure
                 )
 
