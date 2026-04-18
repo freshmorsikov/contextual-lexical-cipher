@@ -26,6 +26,12 @@ around
 as
 at
 away
+am
+is
+are
+was
+were
+will
 be
 because
 before

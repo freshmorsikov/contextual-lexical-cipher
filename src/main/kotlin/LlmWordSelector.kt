@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.serializer
 
-internal class LlmWordSelector : WordSelector, AutoCloseable {
+internal open class LlmWordSelector : WordSelector, AutoCloseable {
 
     internal data class PromptPayload(
         val systemPrompt: String,
@@ -101,6 +101,35 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         )
     }
 
+    internal fun buildFirstWordPromptPayload(
+        words: List<String>,
+    ): PromptPayload {
+        val systemPrompt = """
+            You will receive a numbered list of candidate words.
+
+            Choose the top 5 candidate words that would work best as the best opening for a text and make the opening sound natural in normal English.
+            Return JSON as an object with a single field:
+            words: array of objects with:
+            - word: the exact candidate word from the input
+            - naturalnessScore: a number from 0.0 to 1.0
+
+            Return at most 5 words, ordered from most probable to least probable.
+            Higher score means the word is a stronger, more natural opening word.
+            Prefer words that feel natural as an opening word for a sentence or text.
+            Only use candidate words that appear in the input.
+            The number is only an item label and is not part of the candidate word.
+            Do not add explanation or extra fields.
+        """.trimIndent()
+        val userPrompt = words.mapIndexed { index, word ->
+            "${index + 1}. word = $word"
+        }.joinToString(separator = "\n")
+
+        return PromptPayload(
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt,
+        )
+    }
+
     private class StructuredPromptExecutor(
         private val llmClient: OpenAILLMClient,
     ) {
@@ -155,16 +184,32 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         val mixedWords = words + LINKING_WORDS
         val newWords = mutableListOf<String>()
 
+        logDebug(
+            type = "text",
+            message = encodedWords.joinToString(separator = " "),
+        )
+
         repeat(MAX_ATTEMPTS) { i ->
             val wordSet = if (i == MAX_ATTEMPTS - 1) {
                 words
             } else {
                 mixedWords
             }
-            val result = getWord(
-                words = wordSet,
-                sentence = (encodedWords + newWords).toSentence()
-            )
+            val sentence = (encodedWords + newWords).toSentence()
+            val result = if (sentence.isBlank()) {
+                getWord(
+                    words = wordSet,
+                    promptPayload = buildFirstWordPromptPayload(wordSet),
+                )
+            } else {
+                getWord(
+                    words = wordSet,
+                    promptPayload = buildPromptPayload(
+                        words = wordSet,
+                        sentence = sentence,
+                    ),
+                )
+            }
             result.onSuccess { word ->
                 newWords += word
 
@@ -177,17 +222,12 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
         return "-"
     }
 
-    private fun getWord(words: List<String>, sentence: String): Result<String> {
-        val promptPayload = buildPromptPayload(
-            words = words,
-            sentence = sentence,
-        )
+    internal open fun getWord(words: List<String>, promptPayload: PromptPayload): Result<String> {
         logDebug(
             type = "request",
             message = """
-                Current sentence: $sentence
                 Candidate words: ${words.joinToString(separator = ", ")}
-            """.trimIndent()
+            """.trimIndent(),
         )
 
         return runCatching {
@@ -201,14 +241,14 @@ internal class LlmWordSelector : WordSelector, AutoCloseable {
                     structure = scoredWordsStructure
                 )
 
-                val a = response.getOrThrow()
-                val scoredWords = response.getOrThrow().data.words
+                val structuredResponse = response.getOrThrow()
+                val scoredWords = structuredResponse.data.words
                 logDebug(
                     type = "response",
                     message = buildString {
-                        append("in: ${a.message.metaInfo.inputTokensCount} \n")
-                        append("out: ${a.message.metaInfo.outputTokensCount} \n")
-                        append("ScoredWords: $scoredWords")
+                        append("in: ${structuredResponse.message.metaInfo.inputTokensCount} \n")
+                        append("out: ${structuredResponse.message.metaInfo.outputTokensCount} \n")
+                        append(scoredWords.joinToString { "${it.word} (${it.naturalnessScore})" })
                     }
                 )
                 val word = selectBestCandidate(

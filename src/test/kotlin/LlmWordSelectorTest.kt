@@ -88,4 +88,44 @@ class LlmWordSelectorTest {
             prompt.userPrompt,
         )
     }
+
+    @Test
+    fun `WHEN building first word prompt THEN uses opening specific instructions`() {
+        val selector = LlmWordSelector()
+
+        val prompt = selector.buildFirstWordPromptPayload(
+            words = listOf("alpha", "beta"),
+        )
+
+        assertTrue(prompt.systemPrompt.contains("best opening for a text"))
+        assertTrue(prompt.systemPrompt.contains("opening word"))
+        assertTrue(prompt.systemPrompt.contains("Only use candidate words that appear in the input"))
+        assertEquals(
+            """
+            1. word = alpha
+            2. word = beta
+            """.trimIndent(),
+            prompt.userPrompt,
+        )
+    }
+
+    @Test
+    fun `WHEN no encoded words exist THEN first word prompt is used`() {
+        val selector = object : LlmWordSelector() {
+            override fun getWord(
+                words: List<String>,
+                promptPayload: PromptPayload,
+            ): Result<String> {
+                assertTrue(promptPayload.systemPrompt.contains("best opening for a text"))
+                return Result.success("alpha")
+            }
+        }
+
+        val selectedWord = selector.select(
+            words = listOf("alpha", "beta"),
+            encodedWords = emptyList(),
+        )
+
+        assertEquals("alpha", selectedWord)
+    }
 }
