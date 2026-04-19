@@ -26,6 +26,8 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
         val word: String,
         @SerialName("naturalnessScore")
         val naturalnessScore: Double,
+        @SerialName("punctuation")
+        val punctuation: String? = null,
     )
 
     @Serializable
@@ -36,6 +38,7 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
 
     companion object {
         private val LINKING_WORDS = loadWordResource("linking_words.txt")
+        private val ALLOWED_PUNCTUATION = setOf(",", ".", "!", "?", ":", ";")
         private const val MAX_ATTEMPTS = 3
         private val scoredWordsStructure = JsonStructure.create<ScoredWordsPayload>(
             id = "ScoredWords",
@@ -44,8 +47,29 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
                 ScoredWordsPayload(
                     words = listOf(
                         ScoredWordPayload(
-                            word = "example",
-                            naturalnessScore = 0.42,
+                            word = "be",
+                            naturalnessScore = 0.95,
+                            punctuation = ".",
+                        ),
+                        ScoredWordPayload(
+                            word = "develop",
+                            naturalnessScore = 0.91,
+                            punctuation = null,
+                        ),
+                        ScoredWordPayload(
+                            word = "do",
+                            naturalnessScore = 0.84,
+                            punctuation = ",",
+                        ),
+                        ScoredWordPayload(
+                            word = "prepare",
+                            naturalnessScore = 0.7,
+                            punctuation = null,
+                        ),
+                        ScoredWordPayload(
+                            word = "stay",
+                            naturalnessScore = 0.69,
+                            punctuation = null,
                         )
                     )
                 )
@@ -86,11 +110,13 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
             words: array of objects with:
             - word: the exact candidate word from the input
             - naturalnessScore: a number from 0.0 to 1.0
+            - punctuation: either null, ",", ".", "!", "?", ":", ";" to optionally follow the chosen word
 
             Return at most 5 words, ordered from most probable to least probable.
             Higher score means the phrase sounds more natural.
             Care about repetition and overusing, do not repeat the same words too often, and try to build natural text.
             Only use candidate words that appear in the input.
+            Use punctuation only when it makes the text sound more natural.
             The number is only an item label and is not part of the candidate word.
             Do not add explanation or extra fields.
         """.trimIndent()
@@ -120,11 +146,13 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
             words: array of objects with:
             - word: the exact candidate word from the input
             - naturalnessScore: a number from 0.0 to 1.0
+            - punctuation: null
 
             Return at most 5 words, ordered from most probable to least probable.
             Higher score means the word is a stronger, more natural opening word.
             Prefer words that feel natural as an opening word for a sentence or text.
             Only use candidate words that appear in the input.
+            Do not add punctuation to the first word.
             The number is only an item label and is not part of the candidate word.
             Do not add explanation or extra fields.
         """.trimIndent()
@@ -219,9 +247,14 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
                 )
             }
             result.onSuccess { word ->
-                newWords += word
+                val selectedWord = if (sentence.isBlank()) {
+                    word.removeTrailingAllowedPunctuation()
+                } else {
+                    word
+                }
+                newWords += selectedWord
 
-                if (word in words) {
+                if (selectedWord.removeTrailingAllowedPunctuation() in words) {
                     return newWords.toSentence()
                 }
             }
@@ -256,7 +289,7 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
                     message = buildString {
                         append("in: ${structuredResponse.message.metaInfo.inputTokensCount} \n")
                         append("out: ${structuredResponse.message.metaInfo.outputTokensCount} \n")
-                        append(scoredWords.joinToString { "${it.word} (${it.naturalnessScore})" })
+                        append(scoredWords.joinToString { "${it.word}(${it.punctuation.orEmpty()}) (${it.naturalnessScore})" })
                     }
                 )
                 val word = selectBestCandidate(
@@ -290,9 +323,22 @@ internal open class LlmWordSelector : WordSelector, AutoCloseable {
         val candidateLowercaseWords = candidateWords.map { candidateWord ->
             candidateWord.lowercase()
         }
-        return scoredWords.firstOrNull { word ->
+        val selectedWord = scoredWords.firstOrNull { word ->
             candidateLowercaseWords.contains(word.word.lowercase())
-        }?.word
+        } ?: return null
+        val punctuation = selectedWord.punctuation?.takeIf {
+            it in ALLOWED_PUNCTUATION
+        }.orEmpty()
+
+        return selectedWord.word + punctuation
+    }
+
+    private fun String.removeTrailingAllowedPunctuation(): String {
+        return if (lastOrNull()?.toString() in ALLOWED_PUNCTUATION) {
+            dropLast(1)
+        } else {
+            this
+        }
     }
 
     override fun close() {

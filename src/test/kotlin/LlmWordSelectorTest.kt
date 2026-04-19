@@ -3,6 +3,7 @@ package com.github.freshmorsikov
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -50,6 +51,22 @@ class LlmWordSelectorTest {
     }
 
     @Test
+    fun `WHEN ranked word has allowed punctuation THEN returns formatted token`() {
+        val selectedWord = LlmWordSelector().selectBestCandidate(
+            candidateWords = listOf("alpha", "beta"),
+            scoredWords = listOf(
+                LlmWordSelector.ScoredWordPayload(
+                    word = "beta",
+                    naturalnessScore = 0.91,
+                    punctuation = ",",
+                ),
+            ),
+        )
+
+        assertEquals("beta,", selectedWord)
+    }
+
+    @Test
     fun `WHEN ranked words contain no valid candidate THEN returns null`() {
         val selectedWord = LlmWordSelector().selectBestCandidate(
             candidateWords = listOf("alpha", "beta"),
@@ -81,6 +98,8 @@ class LlmWordSelectorTest {
         assertTrue(prompt.systemPrompt.contains("The prompt starts with the current phrase"))
         assertTrue(prompt.systemPrompt.contains("Each candidate item uses this format"))
         assertTrue(prompt.systemPrompt.contains("The number is only an item label"))
+        assertTrue(prompt.systemPrompt.contains("punctuation"))
+        assertTrue(prompt.systemPrompt.contains("null, \",\", \".\", \"!\", \"?\", \":\", \";\""))
         assertEquals(
             """
             phrase = hello <new word here>
@@ -102,6 +121,8 @@ class LlmWordSelectorTest {
         assertTrue(prompt.systemPrompt.contains("best opening for a text"))
         assertTrue(prompt.systemPrompt.contains("opening word"))
         assertTrue(prompt.systemPrompt.contains("Only use candidate words that appear in the input"))
+        assertTrue(prompt.systemPrompt.contains("Do not add punctuation to the first word"))
+        assertFalse(prompt.systemPrompt.contains("to optionally follow the chosen word"))
         assertEquals(
             """
             1. word = alpha
@@ -129,5 +150,44 @@ class LlmWordSelectorTest {
         )
 
         assertEquals("alpha", selectedWord)
+    }
+
+    @Test
+    fun `WHEN no encoded words exist THEN returned punctuation is removed`() {
+        val selector = object : LlmWordSelector() {
+            override fun getWord(
+                words: List<String>,
+                promptPayload: PromptPayload,
+            ): Result<String> {
+                return Result.success("alpha,")
+            }
+        }
+
+        val selectedWord = selector.select(
+            words = listOf("alpha", "beta"),
+            encodedWords = emptyList(),
+        )
+
+        assertEquals("alpha", selectedWord)
+    }
+
+    @Test
+    fun `WHEN selector first chooses linking word THEN keeps selecting until encoded word is found`() {
+        val selectedWords = mutableListOf("and", "alpha,")
+        val selector = object : LlmWordSelector() {
+            override fun getWord(
+                words: List<String>,
+                promptPayload: PromptPayload,
+            ): Result<String> {
+                return Result.success(selectedWords.removeFirst())
+            }
+        }
+
+        val selectedWord = selector.select(
+            words = listOf("alpha", "beta"),
+            encodedWords = listOf("hello"),
+        )
+
+        assertEquals("and alpha,", selectedWord)
     }
 }
